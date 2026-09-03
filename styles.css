@@ -204,6 +204,10 @@ main { min-width: 0; margin-left: var(--rail); overflow: clip; }
   padding: clamp(2rem, 5vh, 4rem) 0 clamp(1.5rem, 3vh, 2.4rem);
 }
 .hero-copy > * { min-width: 0; max-width: 100%; }
+.hero-name { grid-column: 1; grid-row: 1; align-self: end; margin: 0 0 clamp(.6rem, 1.1vw, .9rem); font-family: var(--mono); font-size: .68rem; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: var(--white); }
+.hero-copy > h1 { grid-column: 1; grid-row: 2; }
+.hero-copy > .hero-sub { grid-column: 2; grid-row: 2; align-self: end; }
+.hero-copy { grid-template-rows: auto auto; row-gap: 0; align-items: end; }
 
 h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3 { text-wrap: balance; }
