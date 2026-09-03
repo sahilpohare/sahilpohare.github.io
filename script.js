@@ -1028,6 +1028,129 @@ drawKitchen();
 })();
 
 /* ---------------------------------------------------------------------------
+   Ambient liquid
+   Blobs manifest at random points in the viewport, swell, hold, then sink
+   back out. Each is the same lobed opaque polygon as the pointer field, on a
+   `difference`-blend canvas so it inverts whatever it covers. The R/G/B
+   channels are traced at slightly different offsets, so the body cancels to
+   white and only the torn rim fringes cyan and magenta - a deliberate,
+   bounded exception to the strict-monochrome rule in DESIGN.md.
+   At most a few are alive at once; the loop pauses when the tab is hidden and
+   never runs under reduced motion, on touch, or in capture mode.
+--------------------------------------------------------------------------- */
+(() => {
+  const canvas = document.querySelector("#blob-field");
+  if (!canvas) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const ctx = canvas.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+  const MAX_ALIVE = 3;
+  const blobs = [];
+  let raf = 0;
+  let lastSpawn = 0;
+  let nextGap = 900;
+
+  function size() {
+    const w = window.innerWidth, h = window.innerHeight;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  size();
+  window.addEventListener("resize", size);
+
+  function spawn(now) {
+    // Bias away from the dead centre so blobs read as incidental, not aimed.
+    const w = window.innerWidth, h = window.innerHeight;
+    const edge = Math.random() < .55;
+    const x = edge ? (Math.random() < .5 ? Math.random() * w * .3 : w - Math.random() * w * .3) : Math.random() * w;
+    const y = Math.random() * h;
+    blobs.push({
+      x, y,
+      r: 0,
+      rMax: 46 + Math.random() * 104,
+      t: 0,
+      life: 2600 + Math.random() * 2600,
+      wob: Math.random() * 6.28,
+      drift: (Math.random() - .5) * .18,
+      born: now
+    });
+  }
+
+  // One lobed polygon: hard edge by construction, low-frequency noise on the
+  // rim so it reads as liquid rather than a machined circle.
+  function trace(b, scale, ox, oy) {
+    const segs = 30;
+    ctx.beginPath();
+    for (let s = 0; s <= segs; s += 1) {
+      const a = (s / segs) * 6.283185;
+      const warp = 1
+        + Math.sin(a * 3 + b.wob) * .07
+        + Math.sin(a * 5 - b.wob * 1.4) * .04;
+      const rr = b.r * warp * scale;
+      const px = b.x + ox + Math.cos(a) * rr;
+      const py = b.y + oy + Math.sin(a) * rr;
+      if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Chromatic aberration: the three channels are traced at slightly different
+  // offsets and scales, so they cancel to white in the body and fringe cyan and
+  // magenta only at the torn rim. `lighter` sums them back into white.
+  function paint(b) {
+    const shift = 2 + b.r * .045;
+    const ang = b.wob * .35;
+    const dx = Math.cos(ang) * shift;
+    const dy = Math.sin(ang) * shift;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = "#f00";
+    trace(b, 1.012, dx, dy);
+    ctx.fillStyle = "#0f0";
+    trace(b, 1, 0, 0);
+    ctx.fillStyle = "#00f";
+    trace(b, 1.012, -dx, -dy);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function tick(now) {
+    if (document.hidden) { raf = 0; return; }
+    if (!lastSpawn) lastSpawn = now;
+    if (now - lastSpawn > nextGap && blobs.length < MAX_ALIVE) {
+      spawn(now);
+      lastSpawn = now;
+      nextGap = 700 + Math.random() * 2400;
+    }
+
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+    for (let i = blobs.length - 1; i >= 0; i -= 1) {
+      const b = blobs[i];
+      b.t = now - b.born;
+      const p = b.t / b.life;
+      if (p >= 1) { blobs.splice(i, 1); continue; }
+      // Rise, hold, sink: a smooth in-and-out envelope on the radius.
+      const env = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI);
+      b.r = b.rMax * Math.pow(env, .7);
+      b.wob += .03;
+      b.y += b.drift;
+      if (b.r > .8) paint(b);
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function start() { if (!raf && !document.hidden) raf = requestAnimationFrame(tick); }
+  function stop() { cancelAnimationFrame(raf); raf = 0; ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
+
+  document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
+  start();
+})();
+
+/* ---------------------------------------------------------------------------
    Liquid inversion field
    A mercury-like mass of connected fluid nodes trails the pointer on a fixed
    full-viewport canvas. Each node is a lobed opaque polygon; consecutive nodes

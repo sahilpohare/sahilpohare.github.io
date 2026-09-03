@@ -22,16 +22,17 @@
     -->
     <a class="skip-link" href="#main">Skip to the system</a>
 
+    <canvas id="blob-field" aria-hidden="true"></canvas>
     <canvas id="drag-field" aria-hidden="true"></canvas>
 
     <aside class="identity-rail" aria-label="Portfolio identity and navigation">
       <a class="monogram" href="#top" aria-label="Sahil Pohare, back to top">SP</a>
       <nav aria-label="Primary navigation">
         <a href="#about" data-route-link="about"><span>About</span></a>
+        <a href="#skills" data-route-link="skills"><span>Skills</span></a>
         <a href="#kitchen" data-route-link="kitchen"><span>Kitchen</span></a>
         <a href="#systems" data-route-link="systems"><span>Projects</span></a>
         <a href="#experience" data-route-link="experience"><span>Track record</span></a>
-        <a href="#history" data-route-link="history"><span>Timeline</span></a>
       </nav>
       <a class="rail-contact" href="https://www.linkedin.com/in/sahil-pohare-5b3aa9149/" target="_blank" rel="noreferrer">
         <span>Signal me</span>
@@ -91,6 +92,27 @@
           <p><b>YC experience</b> Engineer at YC-backed Orange Health Labs (YC20) — growth tooling (+23% acquisition, −25% churn), bucketed search (+15% conversion).</p>
           <p><b>Conference speaker</b> Talked distributed BEAM compute and capability-based routing at Goatmire, Sweden.</p>
           <p><b>Origin</b> Self-taught since nine; started out building games. Run Maplify Tech, a rescue-engineering studio.</p>
+        </div>
+      </section>
+
+      <section class="skills-section" id="skills" aria-labelledby="focus-title">
+        <pre class="ascii-banner" aria-hidden="true">SKILLS_ARE_EXECUTION_CAPACITY  strategy_first=true  depth=4D</pre>
+        <div class="technical-focus">
+          <div class="focus-heading">
+            <span>SKILLS_4D / ELIXIR_FOCUSED</span>
+            <h3 id="focus-title">Four dimensions of how I execute.</h3>
+            <p>The decision comes first; this is the range I build with once it's made. Four practices, drawn as the four axes of a real tesseract — pick one to isolate it.</p>
+          </div>
+          <div class="skills-4d-stage">
+            <canvas id="skills-4d-canvas" aria-hidden="true"></canvas>
+            <div class="skills-readout"><span>PROJECTION: 4D → 3D → 2D</span><span id="skills-axis-readout">AXIS_W / ELIXIR + BEAM + OTP</span></div>
+          </div>
+          <div class="skill-axes" role="group" aria-label="Technical skill dimensions">
+            <button type="button" class="is-active" data-skill-axis="beam" aria-pressed="true"><span class="axis-head">W / PRIMARY<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.5 6 5 10 5 14.5A7 7 0 0 0 19 14.5C19 10.5 16.2 7.4 12 2Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.2 15.6c.4 2 2 3.4 4 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>Elixir / BEAM + OTP</b><p>Fault-tolerant processes, supervision, distributed registries, CRDTs, realtime channels, and systems that recover.</p><code>Elixir · Erlang · Horde · Nerves · Phoenix · Rustler</code></button>
+            <button type="button" data-skill-axis="go" aria-pressed="false"><span class="axis-head">X / NETWORK<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9h8M1 12h6M3 15h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="14.4" cy="11" r="1.3" fill="currentColor"/><circle cx="18.4" cy="11" r="1.3" fill="currentColor"/></svg></span><b>Golang</b><p>Network daemons, peer-to-peer protocols, high-throughput services, and infrastructure with a small operational surface.</p><code>libp2p · gRPC · QUIC · Kademlia · etcd/raft</code></button>
+            <button type="button" data-skill-axis="next" aria-pressed="false"><span class="axis-head">Y / PRODUCT<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.6 16.5V7.5l8 10.2M15.4 7.5v6.4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg></span><b>Next.js + React</b><p>The customer-facing product around the infrastructure: workflow builders, realtime chat, research tools, and operating interfaces.</p><code>Next.js · React · TanStack · Canvas · Tailwind</code></button>
+            <button type="button" data-skill-axis="infra" aria-pressed="false"><span class="axis-head">Z / OPERATIONS<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.3 20.5 7v10L12 21.7 3.5 17V7Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 7.5v4.5m0 0 3.9 2.2M12 12l-3.9 2.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></span><b>Infrastructure + Python</b><p>Kubernetes, cloud and bare metal, observability, queues, data systems, plus Python for AI services, pipelines, and tooling — and the economics that keep production sustainable.</p><code>Kubernetes · Azure · AWS · Python · Pipecat · Kafka · Redis · Postgres</code></button>
+          </div>
         </div>
       </section>
 
@@ -368,27 +390,6 @@
           <a href="https://github.com/sahilpohare/js-mimir-core" target="_blank" rel="noreferrer">Mimir Cloud source <span>↗</span></a>
           <a href="https://dev.to/sahil_pohare/building-a-decentralized-ai-chatbot-with-mimirllm-a-step-by-step-tutorial-1ppl" target="_blank" rel="noreferrer">Article: building a decentralized chatbot <span>↗</span></a>
           <a href="https://dev.to/sahil_pohare/why-mimirllm-matters-democratizing-access-to-ai-with-decentralization-j7" target="_blank" rel="noreferrer">Article: why MimirLLM matters <span>↗</span></a>
-        </div>
-      </section>
-
-      <section class="skills-section" id="skills" aria-labelledby="focus-title">
-        <pre class="ascii-banner" aria-hidden="true">SKILLS_ARE_EXECUTION_CAPACITY  strategy_first=true  depth=4D</pre>
-        <div class="technical-focus">
-          <div class="focus-heading">
-            <span>SKILLS_4D / ELIXIR_FOCUSED</span>
-            <h3 id="focus-title">Four dimensions of how I execute.</h3>
-            <p>The decision comes first; this is the range I build with once it's made. Four practices, drawn as the four axes of a real tesseract — pick one to isolate it.</p>
-          </div>
-          <div class="skills-4d-stage">
-            <canvas id="skills-4d-canvas" aria-hidden="true"></canvas>
-            <div class="skills-readout"><span>PROJECTION: 4D → 3D → 2D</span><span id="skills-axis-readout">AXIS_W / ELIXIR + BEAM + OTP</span></div>
-          </div>
-          <div class="skill-axes" role="group" aria-label="Technical skill dimensions">
-            <button type="button" class="is-active" data-skill-axis="beam" aria-pressed="true"><span class="axis-head">W / PRIMARY<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.5 6 5 10 5 14.5A7 7 0 0 0 19 14.5C19 10.5 16.2 7.4 12 2Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.2 15.6c.4 2 2 3.4 4 3.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span><b>Elixir / BEAM + OTP</b><p>Fault-tolerant processes, supervision, distributed registries, CRDTs, realtime channels, and systems that recover.</p><code>Elixir · Erlang · Horde · Nerves · Phoenix · Rustler</code></button>
-            <button type="button" data-skill-axis="go" aria-pressed="false"><span class="axis-head">X / NETWORK<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9h8M1 12h6M3 15h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="14.4" cy="11" r="1.3" fill="currentColor"/><circle cx="18.4" cy="11" r="1.3" fill="currentColor"/></svg></span><b>Golang</b><p>Network daemons, peer-to-peer protocols, high-throughput services, and infrastructure with a small operational surface.</p><code>libp2p · gRPC · QUIC · Kademlia · etcd/raft</code></button>
-            <button type="button" data-skill-axis="next" aria-pressed="false"><span class="axis-head">Y / PRODUCT<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8.6 16.5V7.5l8 10.2M15.4 7.5v6.4" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg></span><b>Next.js + React</b><p>The customer-facing product around the infrastructure: workflow builders, realtime chat, research tools, and operating interfaces.</p><code>Next.js · React · TanStack · Canvas · Tailwind</code></button>
-            <button type="button" data-skill-axis="infra" aria-pressed="false"><span class="axis-head">Z / OPERATIONS<svg class="axis-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.3 20.5 7v10L12 21.7 3.5 17V7Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 7.5v4.5m0 0 3.9 2.2M12 12l-3.9 2.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg></span><b>Infrastructure + Python</b><p>Kubernetes, cloud and bare metal, observability, queues, data systems, plus Python for AI services, pipelines, and tooling — and the economics that keep production sustainable.</p><code>Kubernetes · Azure · AWS · Python · Pipecat · Kafka · Redis · Postgres</code></button>
-          </div>
         </div>
       </section>
 
