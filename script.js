@@ -1134,6 +1134,7 @@ drawKitchen();
 
   function tick(now) {
     if (document.hidden) { raf = 0; return; }
+    const dragLive = !!(window.__dragField && window.__dragField.probe && window.__dragField.probe());
     if (!lastSpawn) lastSpawn = now;
     if (now - lastSpawn > nextGap && blobs.length < MAX_ALIVE) {
       spawn(now);
@@ -1187,8 +1188,23 @@ drawKitchen();
 
       if (b.r > .8) paint(b);
     }
+
+    // Same pass, same canvas: the pointer mass's lobes land here too, so any
+    // overlap reads as a single merged body.
+    if (window.__dragField && window.__dragField.paintInto) {
+      window.__dragField.paintInto(ctx, rim);
+    }
     raf = requestAnimationFrame(tick);
   }
+
+  // The pointer mass draws into THIS canvas, in the same fill pass, so
+  // overlapping shapes become one silhouette and the metaballs merge instead
+  // of inverting each other.
+  window.__liquidLayer = {
+    ctx,
+    rim,
+    request: () => { if (!raf && !document.hidden) raf = requestAnimationFrame(tick); }
+  };
 
   function start() { if (!raf && !document.hidden) raf = requestAnimationFrame(tick); }
   function stop() { cancelAnimationFrame(raf); raf = 0; ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
@@ -1425,7 +1441,8 @@ drawKitchen();
     wob += 0.05;
 
     if (radius > 1) {
-      metaball();
+      // Rendering now happens on the shared liquid layer; just keep it ticking.
+      if (window.__liquidLayer) window.__liquidLayer.request();
       raf = requestAnimationFrame(tick);
     } else {
       stop();
@@ -1466,7 +1483,48 @@ drawKitchen();
   // ambient blobs can be attracted to the mass and merge into it.
   window.__dragField = {
     point, grab, release,
-    probe: () => (chain[0] && radius > 1 ? { x: chain[0].x, y: chain[0].y, r: radius } : null)
+    probe: () => (chain[0] && radius > 1 ? { x: chain[0].x, y: chain[0].y, r: radius } : null),
+    // Draw the mass into the shared liquid canvas in viewport coordinates.
+    // Bridging quads plus lobed nodes, all in one fill pass, so this body and
+    // the ambient blobs merge where they overlap.
+    paintInto: (sctx, srim) => {
+      if (!chain.length || radius <= 1) return;
+      const rad = [];
+      for (let i = 0; i < chain.length; i += 1) {
+        const taper = 1 - (i / chain.length) * 0.62;
+        const swell = 1 + Math.sin(wob * 1.6 + i * 1.4) * 0.12;
+        rad[i] = Math.max(5, radius * taper * swell);
+      }
+      sctx.globalCompositeOperation = "source-over";
+      sctx.fillStyle = "#fff";
+      for (let i = 0; i < chain.length - 1; i += 1) {
+        const a = chain[i], b = chain[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        sctx.beginPath();
+        sctx.moveTo(a.x + nx * rad[i], a.y + ny * rad[i]);
+        sctx.lineTo(b.x + nx * rad[i + 1], b.y + ny * rad[i + 1]);
+        sctx.lineTo(b.x - nx * rad[i + 1], b.y - ny * rad[i + 1]);
+        sctx.lineTo(a.x - nx * rad[i], a.y - ny * rad[i]);
+        sctx.closePath();
+        sctx.fill();
+      }
+      for (let i = 0; i < chain.length; i += 1) {
+        srim({ x: chain[i].x, y: chain[i].y, r: rad[i], wob: wob + i }, 1, 0, 0, "fill");
+      }
+      // Chromatic rim on the head lobe only, kept faint.
+      const hr = rad[0];
+      const shift = .8 + hr * .01;
+      const ang = wob * .6;
+      const ox = Math.cos(ang) * shift, oy = Math.sin(ang) * shift;
+      sctx.globalCompositeOperation = "lighter";
+      sctx.lineWidth = Math.max(.7, hr * .012);
+      const head = { x: chain[0].x, y: chain[0].y, r: hr, wob };
+      sctx.strokeStyle = "#a00018"; srim(head, 1.002, ox, oy, "stroke");
+      sctx.strokeStyle = "#0092a0"; srim(head, 1.002, -ox, -oy, "stroke");
+      sctx.globalCompositeOperation = "source-over";
+    }
   };
 
   // Ambient driver: every pointer move on the document feeds the mass.

@@ -86,6 +86,7 @@ body.capture-mode #blob-field { display: none; }
   transition: opacity .14s linear;
   will-change: transform, opacity;
 }
+#drag-field { display: none; }   /* retired: the mass now renders on #blob-field */
 #drag-field.is-live { opacity: 1; }
 body.capture-mode #drag-field { display: none; }
 @media (hover: none) { #drag-field { display: none; } }
