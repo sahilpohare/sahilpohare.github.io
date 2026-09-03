@@ -58,15 +58,16 @@ body.capture-mode::after { display: none; }
 body.capture-mode .identity-rail { position: absolute; }
 
 /* Ambient liquid: blobs surface at random across the viewport, hold, and sink
-   back. Same lobed rim and difference blend as the pointer field, one layer
-   below it. Pointer-transparent; off under reduced motion, touch, and capture. */
+   back, inverting whatever they cover. Same difference blend as the pointer
+   field, one layer below it. Pointer-transparent; off under reduced motion
+   and in capture mode. */
 #blob-field {
   position: fixed;
   inset: 0;
   z-index: 89;
   pointer-events: none;
   mix-blend-mode: difference;
-  opacity: .55;
+  opacity: 1;
 }
 body.capture-mode #blob-field { display: none; }
 @media (prefers-reduced-motion: reduce) { #blob-field { display: none; } }

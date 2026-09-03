@@ -1033,11 +1033,9 @@ drawKitchen();
 /* ---------------------------------------------------------------------------
    Ambient liquid
    Blobs manifest at random points in the viewport, swell, hold, then sink
-   back out. Each is the same lobed opaque polygon as the pointer field, on a
-   `difference`-blend canvas so it inverts whatever it covers. The R/G/B
-   channels are traced at slightly different offsets, so the body cancels to
-   white and only the torn rim fringes cyan and magenta - a deliberate,
-   bounded exception to the strict-monochrome rule in DESIGN.md.
+   back out. Each is a white lobed polygon on a `difference`-blend canvas, so
+   it inverts whatever it covers - the same effect as the pointer mass, just
+   arriving at random instead of following the cursor. Strictly monochrome.
    At most a few are alive at once; the loop pauses when the tab is hidden and
    never runs under reduced motion, on touch, or in capture mode.
 --------------------------------------------------------------------------- */
@@ -1074,7 +1072,7 @@ drawKitchen();
     blobs.push({
       x, y,
       r: 0,
-      rMax: 46 + Math.random() * 104,
+      rMax: 40 + Math.random() * 90,
       t: 0,
       life: 2600 + Math.random() * 2600,
       wob: Math.random() * 6.28,
@@ -1083,41 +1081,56 @@ drawKitchen();
     });
   }
 
-  // One lobed polygon: hard edge by construction, low-frequency noise on the
-  // rim so it reads as liquid rather than a machined circle.
-  function trace(b, scale, ox, oy) {
+  // An ambient blob is not the pointer mass. That one is a solid you drag:
+  // hard rim, opaque, 30 even segments. These surface from under the page, so
+  // they are irregular multi-lobe bodies with per-lobe phases, a feathered
+  // edge, and a slow spin of their own.
+  // A tiling dither cell, built once: white pixels at random density on a
+  // transparent ground. Used as the blob fill so the inverted region reads as
+  // grain rather than a clean plate.
+  const noiseTile = (() => {
+    const S = 64;
+    const off = document.createElement("canvas");
+    off.width = S; off.height = S;
+    const octx = off.getContext("2d");
+    const img = octx.createImageData(S, S);
+    for (let i = 0; i < S * S; i += 1) {
+      const on = Math.random();
+      const v = on > .42 ? 255 : 0;
+      img.data[i * 4] = 255;
+      img.data[i * 4 + 1] = 255;
+      img.data[i * 4 + 2] = 255;
+      img.data[i * 4 + 3] = v ? 190 + Math.floor(Math.random() * 65) : 0;
+    }
+    octx.putImageData(img, 0, 0);
+    return off;
+  })();
+  const noisePattern = ctx.createPattern(noiseTile, "repeat");
+
+  // Identical to the pointer mass: 30 segments, the same two-term rim warp at
+  // the same amplitudes, on a difference-blend canvas. The fill is the dither
+  // pattern rather than flat white, so the inversion comes through as grain.
+  function paint(b) {
     const segs = 30;
+    ctx.save();
+    // Drift the pattern with the blob so the grain belongs to it, not the page.
+    ctx.translate(Math.round(b.x % 64), Math.round(b.y % 64));
+    ctx.fillStyle = noisePattern;
+    ctx.translate(-Math.round(b.x % 64), -Math.round(b.y % 64));
     ctx.beginPath();
     for (let s = 0; s <= segs; s += 1) {
-      const a = (s / segs) * 6.283185;
+      const ang = (s / segs) * 6.283185;
       const warp = 1
-        + Math.sin(a * 3 + b.wob) * .07
-        + Math.sin(a * 5 - b.wob * 1.4) * .04;
-      const rr = b.r * warp * scale;
-      const px = b.x + ox + Math.cos(a) * rr;
-      const py = b.y + oy + Math.sin(a) * rr;
+        + Math.sin(ang * 3 + b.wob * 2) * 0.06
+        + Math.sin(ang * 6 - b.wob * 1.5) * 0.03;
+      const rr = b.r * warp;
+      const px = b.x + Math.cos(ang) * rr;
+      const py = b.y + Math.sin(ang) * rr;
       if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.closePath();
     ctx.fill();
-  }
-
-  // Chromatic aberration: the three channels are traced at slightly different
-  // offsets and scales, so they cancel to white in the body and fringe cyan and
-  // magenta only at the torn rim. `lighter` sums them back into white.
-  function paint(b) {
-    const shift = 2 + b.r * .045;
-    const ang = b.wob * .35;
-    const dx = Math.cos(ang) * shift;
-    const dy = Math.sin(ang) * shift;
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = "#f00";
-    trace(b, 1.012, dx, dy);
-    ctx.fillStyle = "#0f0";
-    trace(b, 1, 0, 0);
-    ctx.fillStyle = "#00f";
-    trace(b, 1.012, -dx, -dy);
-    ctx.globalCompositeOperation = "source-over";
+    ctx.restore();
   }
 
   function tick(now) {
@@ -1139,7 +1152,7 @@ drawKitchen();
       // Rise, hold, sink: a smooth in-and-out envelope on the radius.
       const env = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI);
       b.r = b.rMax * Math.pow(env, .7);
-      b.wob += .03;
+      b.wob += .05;
       b.y += b.drift;
       if (b.r > .8) paint(b);
     }
