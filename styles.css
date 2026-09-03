@@ -67,7 +67,7 @@ body.capture-mode .identity-rail { position: absolute; }
   z-index: 89;
   pointer-events: none;
   mix-blend-mode: difference;
-  opacity: 1;
+  opacity: .9;
 }
 body.capture-mode #blob-field { display: none; }
 @media (prefers-reduced-motion: reduce) { #blob-field { display: none; } }

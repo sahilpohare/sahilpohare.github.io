@@ -1045,7 +1045,6 @@ drawKitchen();
   const canvas = document.querySelector("#blob-field");
   if (!canvas) return;
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const ctx = canvas.getContext("2d");
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
   const MAX_ALIVE = 3;
@@ -1060,10 +1059,9 @@ drawKitchen();
     canvas.height = Math.round(h * dpr);
     canvas.style.width = w + "px";
     canvas.style.height = h + "px";
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   size();
-  window.addEventListener("resize", size);
+  window.addEventListener("resize", () => { size(); if (fw) sizeField(); });
 
   function spawn(now) {
     // Bias away from the dead centre so blobs read as incidental, not aimed.
@@ -1091,45 +1089,140 @@ drawKitchen();
   // Body: flat white on a difference-blend canvas, so the blob inverts what it
   // covers - identical to the pointer mass (30 segments, same two-term rim
   // warp at the same amplitudes). Only the spawn point differs.
-  function rim(b, scale, ox, oy, mode) {
-    const segs = 30;
-    ctx.beginPath();
-    for (let s = 0; s <= segs; s += 1) {
-      const ang = (s / segs) * 6.283185;
-      const warp = 1
-        + Math.sin(ang * 3 + b.wob * 2) * 0.06
-        + Math.sin(ang * 6 - b.wob * 1.5) * 0.03;
-      let rr = b.r * warp * scale;
-      // Directional stretch: radii facing the pointer mass extend, the
-      // opposite side flattens slightly - a neck forming under tension.
-      if (b.stretch) {
-        rr *= 1 + b.stretch * Math.cos(ang - b.toward);
+  // GPU metaball field. A fragment shader evaluates sum(r^2/d^2) per pixel and
+  // thresholds it at 1.0, so the isoline is exact, every ball contributes to
+  // every pixel (no box truncation), and cost is one full-screen pass
+  // regardless of ball count. WebGPU where available, WebGL2 otherwise.
+  const MAX_BALLS = 24;
+  const ballData = new Float32Array(MAX_BALLS * 4);   // x, y, r, _
+  let gpu = null;
+
+  const SHADER_WGSL = `
+struct Uniforms {
+  res    : vec2f,
+  count  : f32,
+  phase  : f32,
+  balls  : array<vec4f, ${MAX_BALLS}>,
+};
+@group(0) @binding(0) var<uniform> u : Uniforms;
+
+@vertex
+fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4f {
+  var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  return vec4f(p[i], 0.0, 1.0);
+}
+
+fn field(pos : vec2f) -> f32 {
+  var s = 0.0;
+  let n = i32(u.count);
+  for (var i = 0; i < n; i = i + 1) {
+    let b = u.balls[i];
+    let d = pos - b.xy;
+    s = s + (b.z * b.z) / max(dot(d, d), 1.0);
+  }
+  return s;
+}
+
+@fragment
+fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
+  let p = fc.xy;
+  // Boolean isoline, plus a chromatic split: each channel samples the field
+  // at a slightly different offset, so colour appears only at the edge where
+  // the three disagree. Interior pixels are inside for all three -> white.
+  let o = vec2f(cos(u.phase), sin(u.phase)) * 2.4;
+  let r = select(0.0, 1.0, field(p + o) >= 1.0);
+  let g = select(0.0, 1.0, field(p) >= 1.0);
+  let b = select(0.0, 1.0, field(p - o) >= 1.0);
+  let a = max(r, max(g, b));
+  return vec4f(r * a, g * a, b * a, a);
+}
+`;
+
+
+
+
+
+  async function initWebGPU() {
+    try {
+      if (!("gpu" in navigator)) return null;
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) return null;
+      const device = await adapter.requestDevice();
+      const gctx = canvas.getContext("webgpu");
+      if (!gctx) return null;
+      const format = navigator.gpu.getPreferredCanvasFormat();
+      gctx.configure({ device, format, alphaMode: "premultiplied" });
+      const mod = device.createShaderModule({ code: SHADER_WGSL });
+      if (mod.getCompilationInfo) {
+        const info = await mod.getCompilationInfo();
+        if (info.messages.some((m) => m.type === "error")) return null;
       }
-      const px = b.x + ox + Math.cos(ang) * rr;
-      const py = b.y + oy + Math.sin(ang) * rr;
-      if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      const pipeline = device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module: mod, entryPoint: "vs" },
+        fragment: {
+          module: mod,
+          entryPoint: "fs",
+          targets: [{
+            format,
+            blend: {
+              color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" },
+              alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }
+            }
+          }]
+        },
+        primitive: { topology: "triangle-list" }
+      });
+      const uboSize = 16 + MAX_BALLS * 16;
+      const ubo = device.createBuffer({ size: uboSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      const bind = device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: { buffer: ubo } }]
+      });
+      const staging = new Float32Array(uboSize / 4);
+      return {
+        kind: "webgpu",
+        draw(count, phase) {
+          staging[0] = canvas.width; staging[1] = canvas.height;
+          staging[2] = count; staging[3] = phase;
+          staging.set(ballData.subarray(0, count * 4), 4);
+          device.queue.writeBuffer(ubo, 0, staging);
+          const enc = device.createCommandEncoder();
+          const pass = enc.beginRenderPass({
+            colorAttachments: [{
+              view: gctx.getCurrentTexture().createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+              loadOp: "clear",
+              storeOp: "store"
+            }]
+          });
+          pass.setPipeline(pipeline);
+          pass.setBindGroup(0, bind);
+          pass.draw(3);
+          pass.end();
+          device.queue.submit([enc.finish()]);
+        }
+      };
+    } catch (_) {
+      return null;   // no liquid rather than a wedged renderer
     }
-    ctx.closePath();
-    if (mode === "fill") ctx.fill(); else ctx.stroke();
   }
 
-  function paint(b) {
-    ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = "#fff";
-    rim(b, 1, 0, 0, "fill");
+  (async () => { gpu = await initWebGPU(); })();
 
-    // Chromatic aberration on the rim: red and cyan stroked at small opposite
-    // offsets along a slowly turning axis. `lighter` sums them, so where they
-    // overlap the edge stays white and only the outer fringe carries colour.
-    const shift = .8 + b.r * .012;
-    const ang = b.wob * .6;
-    const dx = Math.cos(ang) * shift;
-    const dy = Math.sin(ang) * shift;
-    ctx.globalCompositeOperation = "lighter";
-    ctx.lineWidth = Math.max(.7, b.r * .014);
-    ctx.strokeStyle = "#c8001e"; rim(b, 1.002, dx, dy, "stroke");
-    ctx.strokeStyle = "#00b4c8"; rim(b, 1.002, -dx, -dy, "stroke");
-    ctx.globalCompositeOperation = "source-over";
+  function renderField(balls, phase) {
+    if (!gpu) return;
+    // The shader reads gl_FragCoord / @builtin(position), which are DEVICE
+    // pixels, while ball positions arrive in CSS pixels. Scale both the
+    // centres and the radii, or the mass renders offset from the cursor.
+    const count = Math.min(balls.length, MAX_BALLS);
+    for (let i = 0; i < count; i += 1) {
+      ballData[i * 4] = balls[i].x * dpr;
+      ballData[i * 4 + 1] = balls[i].y * dpr;
+      ballData[i * 4 + 2] = balls[i].r * dpr;
+      ballData[i * 4 + 3] = 0;
+    }
+    gpu.draw(count, phase);
   }
 
   function tick(now) {
@@ -1142,58 +1235,50 @@ drawKitchen();
       nextGap = 700 + Math.random() * 2400;
     }
 
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-
     // The pointer mass, if it is currently alive. Ambient blobs feel it.
     const mass = window.__dragField && window.__dragField.probe
       ? window.__dragField.probe()
       : null;
 
+    const balls = [];
     for (let i = blobs.length - 1; i >= 0; i -= 1) {
       const b = blobs[i];
       b.t = now - b.born;
       const p = b.t / b.life;
       if (p >= 1) { blobs.splice(i, 1); continue; }
-      // Rise, hold, sink: a smooth in-and-out envelope on the radius.
       const env = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI);
-      b.r = b.rMax * Math.pow(env, .7);
       b.wob += .05;
+      // Wobble now rides on the radius; the field decides the silhouette.
+      b.r = b.rMax * Math.pow(env, .7) * (1 + Math.sin(b.wob * 1.7) * .05);
 
-      b.stretch = 0;
-      b.toward = 0;
       if (mass && b.r > .8) {
         const dx = mass.x - b.x;
         const dy = mass.y - b.y;
         const d = Math.hypot(dx, dy) || 1;
         const reach = mass.r + b.r + 190;
         if (d < reach) {
-          // Surface tension: pull toward the mass, strongest up close.
-          const pull = (1 - d / reach);
+          const pull = 1 - d / reach;
           const accel = pull * pull * 1.5;
           b.vx = (b.vx || 0) + (dx / d) * accel;
           b.vy = (b.vy || 0) + (dy / d) * accel;
-          // Elongate along the axis to the mass, like a bridging neck.
-          b.stretch = Math.min(.5, pull * .62);
-          b.toward = Math.atan2(dy, dx);
-          // Merge: once the surfaces overlap, the mass absorbs it.
-          if (d < mass.r * .82 + b.r * .5) { blobs.splice(i, 1); continue; }
+          if (d < mass.r * .5) { blobs.splice(i, 1); continue; }
         }
       }
 
-      // Damped motion, so a blob that was pulled drifts back to rest.
       b.vx = (b.vx || 0) * .9;
       b.vy = (b.vy || 0) * .9;
       b.x += b.vx;
       b.y += b.vy + b.drift;
 
-      if (b.r > .8) paint(b);
+      if (b.r > .8) balls.push({ x: b.x, y: b.y, r: b.r });
     }
 
-    // Same pass, same canvas: the pointer mass's lobes land here too, so any
-    // overlap reads as a single merged body.
-    if (window.__dragField && window.__dragField.paintInto) {
-      window.__dragField.paintInto(ctx, rim);
+    // The pointer mass joins the same field, so it merges rather than overlaps.
+    if (window.__dragField && window.__dragField.ballsInto) {
+      window.__dragField.ballsInto(balls);
     }
+
+    renderField(balls, now * .0006);
     raf = requestAnimationFrame(tick);
   }
 
@@ -1201,13 +1286,11 @@ drawKitchen();
   // overlapping shapes become one silhouette and the metaballs merge instead
   // of inverting each other.
   window.__liquidLayer = {
-    ctx,
-    rim,
     request: () => { if (!raf && !document.hidden) raf = requestAnimationFrame(tick); }
   };
 
   function start() { if (!raf && !document.hidden) raf = requestAnimationFrame(tick); }
-  function stop() { cancelAnimationFrame(raf); raf = 0; ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
+  function stop() { cancelAnimationFrame(raf); raf = 0; if (gpu) gpu.draw(0, 0); }
 
   document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
   start();
@@ -1484,46 +1567,15 @@ drawKitchen();
   window.__dragField = {
     point, grab, release,
     probe: () => (chain[0] && radius > 1 ? { x: chain[0].x, y: chain[0].y, r: radius } : null),
-    // Draw the mass into the shared liquid canvas in viewport coordinates.
-    // Bridging quads plus lobed nodes, all in one fill pass, so this body and
-    // the ambient blobs merge where they overlap.
-    paintInto: (sctx, srim) => {
+    // Contribute the mass's lobes to the shared metaball field, so it merges
+    // with ambient blobs through the field rather than overlapping them.
+    ballsInto: (out) => {
       if (!chain.length || radius <= 1) return;
-      const rad = [];
       for (let i = 0; i < chain.length; i += 1) {
         const taper = 1 - (i / chain.length) * 0.62;
         const swell = 1 + Math.sin(wob * 1.6 + i * 1.4) * 0.12;
-        rad[i] = Math.max(5, radius * taper * swell);
+        out.push({ x: chain[i].x, y: chain[i].y, r: Math.max(5, radius * taper * swell) });
       }
-      sctx.globalCompositeOperation = "source-over";
-      sctx.fillStyle = "#fff";
-      for (let i = 0; i < chain.length - 1; i += 1) {
-        const a = chain[i], b = chain[i + 1];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const nx = -dy / len, ny = dx / len;
-        sctx.beginPath();
-        sctx.moveTo(a.x + nx * rad[i], a.y + ny * rad[i]);
-        sctx.lineTo(b.x + nx * rad[i + 1], b.y + ny * rad[i + 1]);
-        sctx.lineTo(b.x - nx * rad[i + 1], b.y - ny * rad[i + 1]);
-        sctx.lineTo(a.x - nx * rad[i], a.y - ny * rad[i]);
-        sctx.closePath();
-        sctx.fill();
-      }
-      for (let i = 0; i < chain.length; i += 1) {
-        srim({ x: chain[i].x, y: chain[i].y, r: rad[i], wob: wob + i }, 1, 0, 0, "fill");
-      }
-      // Chromatic rim on the head lobe only, kept faint.
-      const hr = rad[0];
-      const shift = .8 + hr * .01;
-      const ang = wob * .6;
-      const ox = Math.cos(ang) * shift, oy = Math.sin(ang) * shift;
-      sctx.globalCompositeOperation = "lighter";
-      sctx.lineWidth = Math.max(.7, hr * .012);
-      const head = { x: chain[0].x, y: chain[0].y, r: hr, wob };
-      sctx.strokeStyle = "#a00018"; srim(head, 1.002, ox, oy, "stroke");
-      sctx.strokeStyle = "#0092a0"; srim(head, 1.002, -ox, -oy, "stroke");
-      sctx.globalCompositeOperation = "source-over";
     }
   };
 
