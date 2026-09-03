@@ -1034,8 +1034,10 @@ drawKitchen();
    Ambient liquid
    Blobs manifest at random points in the viewport, swell, hold, then sink
    back out. Each is a white lobed polygon on a `difference`-blend canvas, so
-   it inverts whatever it covers - the same effect as the pointer mass, just
-   arriving at random instead of following the cursor. Strictly monochrome.
+   it inverts whatever it covers - the same form as the pointer mass, just
+   arriving at random instead of following the cursor. The rim carries a
+   red/cyan chromatic split: a deliberate, bounded exception to the
+   strict-monochrome rule, confined to the torn edge.
    At most a few are alive at once; the loop pauses when the tab is hidden and
    never runs under reduced motion, on touch, or in capture mode.
 --------------------------------------------------------------------------- */
@@ -1077,6 +1079,7 @@ drawKitchen();
       life: 2600 + Math.random() * 2600,
       wob: Math.random() * 6.28,
       drift: (Math.random() - .5) * .18,
+      vx: 0, vy: 0, stretch: 0, toward: 0,
       born: now
     });
   }
@@ -1085,52 +1088,48 @@ drawKitchen();
   // hard rim, opaque, 30 even segments. These surface from under the page, so
   // they are irregular multi-lobe bodies with per-lobe phases, a feathered
   // edge, and a slow spin of their own.
-  // A tiling dither cell, built once: white pixels at random density on a
-  // transparent ground. Used as the blob fill so the inverted region reads as
-  // grain rather than a clean plate.
-  const noiseTile = (() => {
-    const S = 64;
-    const off = document.createElement("canvas");
-    off.width = S; off.height = S;
-    const octx = off.getContext("2d");
-    const img = octx.createImageData(S, S);
-    for (let i = 0; i < S * S; i += 1) {
-      const on = Math.random();
-      const v = on > .42 ? 255 : 0;
-      img.data[i * 4] = 255;
-      img.data[i * 4 + 1] = 255;
-      img.data[i * 4 + 2] = 255;
-      img.data[i * 4 + 3] = v ? 190 + Math.floor(Math.random() * 65) : 0;
-    }
-    octx.putImageData(img, 0, 0);
-    return off;
-  })();
-  const noisePattern = ctx.createPattern(noiseTile, "repeat");
-
-  // Identical to the pointer mass: 30 segments, the same two-term rim warp at
-  // the same amplitudes, on a difference-blend canvas. The fill is the dither
-  // pattern rather than flat white, so the inversion comes through as grain.
-  function paint(b) {
+  // Body: flat white on a difference-blend canvas, so the blob inverts what it
+  // covers - identical to the pointer mass (30 segments, same two-term rim
+  // warp at the same amplitudes). Only the spawn point differs.
+  function rim(b, scale, ox, oy, mode) {
     const segs = 30;
-    ctx.save();
-    // Drift the pattern with the blob so the grain belongs to it, not the page.
-    ctx.translate(Math.round(b.x % 64), Math.round(b.y % 64));
-    ctx.fillStyle = noisePattern;
-    ctx.translate(-Math.round(b.x % 64), -Math.round(b.y % 64));
     ctx.beginPath();
     for (let s = 0; s <= segs; s += 1) {
       const ang = (s / segs) * 6.283185;
       const warp = 1
         + Math.sin(ang * 3 + b.wob * 2) * 0.06
         + Math.sin(ang * 6 - b.wob * 1.5) * 0.03;
-      const rr = b.r * warp;
-      const px = b.x + Math.cos(ang) * rr;
-      const py = b.y + Math.sin(ang) * rr;
+      let rr = b.r * warp * scale;
+      // Directional stretch: radii facing the pointer mass extend, the
+      // opposite side flattens slightly - a neck forming under tension.
+      if (b.stretch) {
+        rr *= 1 + b.stretch * Math.cos(ang - b.toward);
+      }
+      const px = b.x + ox + Math.cos(ang) * rr;
+      const py = b.y + oy + Math.sin(ang) * rr;
       if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    if (mode === "fill") ctx.fill(); else ctx.stroke();
+  }
+
+  function paint(b) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "#fff";
+    rim(b, 1, 0, 0, "fill");
+
+    // Chromatic aberration on the rim: red and cyan stroked at small opposite
+    // offsets along a slowly turning axis. `lighter` sums them, so where they
+    // overlap the edge stays white and only the outer fringe carries colour.
+    const shift = .8 + b.r * .012;
+    const ang = b.wob * .6;
+    const dx = Math.cos(ang) * shift;
+    const dy = Math.sin(ang) * shift;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineWidth = Math.max(.7, b.r * .014);
+    ctx.strokeStyle = "#c8001e"; rim(b, 1.002, dx, dy, "stroke");
+    ctx.strokeStyle = "#00b4c8"; rim(b, 1.002, -dx, -dy, "stroke");
+    ctx.globalCompositeOperation = "source-over";
   }
 
   function tick(now) {
@@ -1144,6 +1143,11 @@ drawKitchen();
 
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
 
+    // The pointer mass, if it is currently alive. Ambient blobs feel it.
+    const mass = window.__dragField && window.__dragField.probe
+      ? window.__dragField.probe()
+      : null;
+
     for (let i = blobs.length - 1; i >= 0; i -= 1) {
       const b = blobs[i];
       b.t = now - b.born;
@@ -1153,7 +1157,34 @@ drawKitchen();
       const env = Math.sin(Math.min(1, Math.max(0, p)) * Math.PI);
       b.r = b.rMax * Math.pow(env, .7);
       b.wob += .05;
-      b.y += b.drift;
+
+      b.stretch = 0;
+      b.toward = 0;
+      if (mass && b.r > .8) {
+        const dx = mass.x - b.x;
+        const dy = mass.y - b.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const reach = mass.r + b.r + 190;
+        if (d < reach) {
+          // Surface tension: pull toward the mass, strongest up close.
+          const pull = (1 - d / reach);
+          const accel = pull * pull * 1.5;
+          b.vx = (b.vx || 0) + (dx / d) * accel;
+          b.vy = (b.vy || 0) + (dy / d) * accel;
+          // Elongate along the axis to the mass, like a bridging neck.
+          b.stretch = Math.min(.5, pull * .62);
+          b.toward = Math.atan2(dy, dx);
+          // Merge: once the surfaces overlap, the mass absorbs it.
+          if (d < mass.r * .82 + b.r * .5) { blobs.splice(i, 1); continue; }
+        }
+      }
+
+      // Damped motion, so a blob that was pulled drifts back to rest.
+      b.vx = (b.vx || 0) * .9;
+      b.vy = (b.vy || 0) * .9;
+      b.x += b.vx;
+      b.y += b.vy + b.drift;
+
       if (b.r > .8) paint(b);
     }
     raf = requestAnimationFrame(tick);
@@ -1307,6 +1338,40 @@ drawKitchen();
       fieldCtx.closePath();
       fieldCtx.fill();
     }
+
+    // 3. Chromatic rim on the head lobe only: red and cyan stroked at small
+    //    opposite offsets, summed with `lighter`, so the leading and trailing
+    //    edges disperse while the body stays a clean inversion. Same treatment
+    //    as the ambient blobs, kept deliberately faint.
+    if (P.length) {
+      const head = P[0];
+      const hr = rad[0];
+      const shift = .8 + hr * .01;
+      const a = wob * .6;
+      const dx = Math.cos(a) * shift;
+      const dy = Math.sin(a) * shift;
+      fieldCtx.globalCompositeOperation = "lighter";
+      fieldCtx.lineWidth = Math.max(.7, hr * .012);
+      [["#a00018", dx, dy], ["#0092a0", -dx, -dy]].forEach(([colour, ox, oy]) => {
+        fieldCtx.strokeStyle = colour;
+        fieldCtx.beginPath();
+        const segs = 30;
+        for (let s = 0; s <= segs; s += 1) {
+          const ang = (s / segs) * 6.283185;
+          const warp = 1
+            + Math.sin(ang * 3 + wob * 2) * 0.06
+            + Math.sin(ang * 6 - wob * 1.5) * 0.03;
+          const rr = hr * warp * 1.002;
+          const px = head.x + ox + Math.cos(ang) * rr;
+          const py = head.y + oy + Math.sin(ang) * rr;
+          if (s === 0) fieldCtx.moveTo(px, py);
+          else fieldCtx.lineTo(px, py);
+        }
+        fieldCtx.closePath();
+        fieldCtx.stroke();
+      });
+      fieldCtx.globalCompositeOperation = "source-over";
+    }
   }
 
   function tick() {
@@ -1397,7 +1462,12 @@ drawKitchen();
     }
   }
 
-  window.__dragField = { point, grab, release };
+  // Published for the ambient blob field: live head position and radius, so
+  // ambient blobs can be attracted to the mass and merge into it.
+  window.__dragField = {
+    point, grab, release,
+    probe: () => (chain[0] && radius > 1 ? { x: chain[0].x, y: chain[0].y, r: radius } : null)
+  };
 
   // Ambient driver: every pointer move on the document feeds the mass.
   let last = null;
