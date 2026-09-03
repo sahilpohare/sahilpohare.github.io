@@ -553,6 +553,7 @@ body.field-dragging, body.field-dragging * { cursor: none !important; }
 .route-swatch::before { content: "[ ]"; font-family: var(--mono); font-size: .68rem; }
 .route-tabs button[aria-selected="true"] .route-swatch::before { content: "[x]"; }
 
+.system-links { display: flex; flex-wrap: wrap; gap: .55rem 1.4rem; }
 .system-panel { display: grid; grid-template-columns: 1.15fr .85fr; min-height: 28rem; }
 .system-copy { padding: clamp(1.5rem, 3vw, 3rem); border-right: 1px solid var(--black); }
 .system-state { margin-bottom: 2rem; font-family: var(--mono); font-size: .65rem; font-weight: 800; text-transform: uppercase; }

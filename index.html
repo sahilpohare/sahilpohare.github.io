@@ -265,7 +265,10 @@
               <p class="system-state" id="system-state">Open-source project — I designed and built it</p>
               <h3 id="system-title">A mesh where agents can trust the handoff.</h3>
               <p id="system-summary">A decentralized agent-to-agent protocol: any agent, in any language, discovers peers, delegates tasks with scoped authority, keeps context across hops, and gets an audit log of every interaction. An early prototype adds agent-to-agent payments.</p>
-              <a id="system-link" class="text-link" href="https://github.com/sahilpohare/MoltMesh" target="_blank" rel="noreferrer">Source on GitHub <span>↗</span></a>
+              <div class="system-links" id="system-links">
+                <a class="text-link" href="https://github.com/sahilpohare/MoltMesh" target="_blank" rel="noreferrer">Source on GitHub <span>↗</span></a>
+                <a class="text-link" href="https://openmolt.network" target="_blank" rel="noreferrer">Demo network <span>↗</span></a>
+              </div>
             </div>
             <dl class="system-facts" id="system-facts">
               <div><dt>Transport</dt><dd>QUIC + Noise</dd></div>
@@ -281,117 +284,8 @@
         </div>
       </section>
 
-      <section class="pingerchips-case" id="pingerchips" aria-labelledby="pinger-title">
-        <pre class="ascii-banner" aria-hidden="true">┌─ PINGERCHIPS://RUN_8F2C ─────── network: wifi → cellular ──┐</pre>
-        <p class="section-tag">Product I founded — 5 B2B customers, 800+ daily users</p>
-        <div class="pinger-lead">
-          <h2 id="pinger-title">Pingerchips — durable realtime for AI.</h2>
-          <div class="project-context">
-            <p><b>The problem:</b> AI work takes time. Change network, reload the page, or crash a worker, and a normal token stream dies — the agent starts over from zero.</p>
-            <p><b>What I built:</b> One realtime layer that replaces the usual duct tape of SSE, message history, job queues, and socket notifications. Built on Elixir/OTP and Rust NIFs. I founded it and run it.</p>
-          </div>
-        </div>
-        <div class="stream-terminal" aria-label="A Pingerchips stream survives a network disconnect and resumes without losing tokens">
-          <div class="terminal-head"><span>agent.pushToken()</span><span>RUN 8F2C / ACTIVE</span></div>
-          <pre aria-hidden="true"><code><span class="stream-muted">0001 0002 0003 0004 0005 0006 0007 0008</span>
-0009 0010 0011 0012 0013 0014 0015 0016
-0017 0018 0019 0020 0021 0022 0023 0024
 
-─────────────── <b>NETWORK DROPS @ 00:41</b> ───────────────
-                     ×
-                wifi → cellular
-                     ↓
-─────────────── <b>STREAM RESUMES</b> ─────────────────────
 
-0025 0026 0027 0028 0029 0030 0031 0032
-0033 0034 0035 0036 0037 0038 0039 0040
-
-<b>0 TOKENS LOST  /  MID-TOKEN RESUME  /  MESSAGE COMMITTED</b></code></pre>
-          <div class="stream-pulse" aria-hidden="true"></div>
-        </div>
-        <div class="pinger-primitives">
-          <div><span>01 / FOR THE USER</span><h3>The answer keeps streaming</h3><p>The user can switch from Wi-Fi to cellular or reload the page. The response resumes instead of disappearing.</p></div>
-          <div><span>02 / FOR THE AGENT</span><h3>The work survives a crash</h3><p>Agent state lives in a durable object. A replacement worker can recover context and continue the interrupted run.</p></div>
-          <div><span>03 / FOR THE TEAM</span><h3>One system to operate</h3><p>Threads, history, pub/sub, worker claiming, and delivery guarantees share one SDK in JavaScript and Python.</p></div>
-        </div>
-        <div class="pinger-foot">
-          <p>Managed cloud → your VPC → fully air-gapped. Same primitives. No rewrite.</p>
-          <a href="https://pingerchips.com" target="_blank" rel="noreferrer">Open Pingerchips <span>↗</span></a>
-          <a href="https://docs.pingerchips.com/" target="_blank" rel="noreferrer">Read the docs <span>↗</span></a>
-        </div>
-      </section>
-
-      <section class="maplify-case" id="maplify" aria-labelledby="maplify-title">
-        <pre class="ascii-banner" aria-hidden="true">git diff v0.1..production  -- security -- data -- architecture</pre>
-        <p class="section-tag">Studio I own and operate — client engagements</p>
-        <div class="maplify-lead">
-          <h2 id="maplify-title">Maplify Tech — rescue engineering.</h2>
-          <div>
-            <p><b>Who it's for:</b> Founders who used Lovable, Bolt, Cursor, Replit, or Claude Code to reach v0.1 fast, then found it wasn't safe to put in front of customers.</p>
-            <p><b>What I do:</b> Take the engagement, keep the working product live, and fix the security, data model, tests, deployment, and ownership underneath it. <span class="tagline">You vibe. We harden.</span></p>
-            <a href="https://maplifytech.com" target="_blank" rel="noreferrer">Visit Maplify Tech <span>↗</span></a>
-          </div>
-        </div>
-        <div class="rescue-diff">
-          <div class="diff-before">
-            <span>V0.1 / OBSERVED</span>
-            <pre aria-hidden="true"><code>- auth: implicit
-- secrets: client_env
--- database: public
---- tests: none
----- deploy: manual
------ ownership: unclear</code></pre>
-          </div>
-          <div class="diff-arrow" aria-hidden="true">
-            <pre>       ┌───────────┐
-──────▶│  RESCUE   │──────▶
-       └───────────┘</pre>
-          </div>
-          <div class="diff-after">
-            <span>PRODUCTION / HANDOFF</span>
-            <pre aria-hidden="true"><code>+ auth: enforced
-+ secrets: managed
-++ database: RLS
-+++ tests: critical paths
-++++ deploy: CI/CD
-+++++ ownership: documented</code></pre>
-          </div>
-        </div>
-        <ol class="rescue-stages">
-          <li><span>01</span><div><h3>Assess</h3><p>Rank code, infrastructure, security, and data risks by severity and business impact.</p></div></li>
-          <li><span>02</span><div><h3>Stabilize</h3><p>Close critical exposures first so the product can keep operating safely.</p></div></li>
-          <li><span>03</span><div><h3>Harden + refactor</h3><p>Repair architecture, data, tests, delivery, performance, and observability.</p></div></li>
-          <li><span>04</span><div><h3>Hand off</h3><p>Leave documentation, runbooks, and a system the team can own.</p></div></li>
-        </ol>
-      </section>
-
-      <section class="mimir-case" id="mimir" aria-labelledby="mimir-title">
-        <pre class="ascii-banner" aria-hidden="true">+--[ MIMIR ]---------- peer-to-peer compute + language models ----------+</pre>
-        <p class="section-tag">Open-source projects I built at 17 — the P2P work that led into MoltMesh</p>
-        <div class="pinger-lead">
-          <h2 id="mimir-title">Mimir — compute and models, peer to peer.</h2>
-          <div class="project-context">
-            <p><b>What I built:</b> Two open-source projects, at 17. <b>Mimir Cloud</b> lets peers submit WASM or JavaScript functions that worker nodes on the network discover, schedule, and run. <b>MimirLLM</b> does the same for language models — find the models peers are hosting and talk to them, running as a light client or a full node.</p>
-            <p><b>Why it's here:</b> Sharing compute and models across untrusted peers needs discovery, scheduling, and isolation with no server in the middle. That's the exact problem <a href="#moltmesh">MoltMesh</a> now solves for AI agents — I first worked it out as a teenager, years before agent meshes were a category. I wrote two articles on it.</p>
-          </div>
-        </div>
-        <div class="mimir-flow" aria-label="A MimirLLM client discovers a peer hosting a model over libp2p and exchanges a query and response">
-          <pre aria-hidden="true"><code>  client ──libp2p──▶ Kademlia DHT ──▶ "who hosts llama3?"
-                                          │
-                          ┌───────────────┴───────────────┐
-                          ▼                               ▼
-                   node A (Ollama)                 node B (Ollama)
-                          │                               │
-       query ────────────▶  isolated-VM / V8 execution    │
-       response ◀──────────  streamed back over the mesh   │</code></pre>
-        </div>
-        <div class="mimir-foot">
-          <a href="https://github.com/sahilpohare/mimir-llm" target="_blank" rel="noreferrer">MimirLLM source <span>↗</span></a>
-          <a href="https://github.com/sahilpohare/js-mimir-core" target="_blank" rel="noreferrer">Mimir Cloud source <span>↗</span></a>
-          <a href="https://dev.to/sahil_pohare/building-a-decentralized-ai-chatbot-with-mimirllm-a-step-by-step-tutorial-1ppl" target="_blank" rel="noreferrer">Article: building a decentralized chatbot <span>↗</span></a>
-          <a href="https://dev.to/sahil_pohare/why-mimirllm-matters-democratizing-access-to-ai-with-decentralization-j7" target="_blank" rel="noreferrer">Article: why MimirLLM matters <span>↗</span></a>
-        </div>
-      </section>
 
       <section class="ledger" id="experience" aria-labelledby="ledger-title">
         <pre class="ascii-banner" aria-hidden="true">$ ./measure-impact --source=production --format=ledger</pre>

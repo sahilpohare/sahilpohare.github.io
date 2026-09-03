@@ -3,8 +3,7 @@ const systems = {
     state: "Open-source project — I designed and built it",
     title: "A mesh where agents can trust the handoff.",
     summary: "A decentralized agent-to-agent protocol: any agent, in any language, discovers peers, delegates tasks with scoped authority, keeps context across hops, and gets an audit log of every interaction — no central server, no API keys. The daemon absorbs all the libp2p complexity; agents just speak gRPC. An early prototype adds agent-to-agent payments. Open source; openmolt.network is the demo network.",
-    href: "https://github.com/sahilpohare/MoltMesh",
-    link: "Source on GitHub",
+    links: [["https://github.com/sahilpohare/MoltMesh", "Source on GitHub"], ["https://openmolt.network", "Demo network"]],
     facts: [["Transport", "QUIC + Noise"], ["Discovery", "Kademlia DHT"], ["Authority", "did:key + Ed25519"], ["Payments", "Agent-to-agent (prototype)"]],
     constraint: "Agents written in any language needed one secure, auditable coordination layer without inheriting libp2p complexity."
   },
@@ -12,8 +11,7 @@ const systems = {
     state: "Master's thesis — distributed systems research",
     title: "Compute routed by capability, not location.",
     summary: "BitTorrent for the BEAM: a self-organizing mesh of embedded Erlang/Elixir nodes that advertise what hardware they have and route work to it. Standard OTP primitives — GenServers, task linking, supervision — keep working across the mesh, on tiny devices that drop off the network.",
-    href: "https://elixirforum.com/t/looking-for-feedback-on-my-thesis-project-distributed-beam-compute-capability-based-routing-for-nerves/74884",
-    link: "Read the architecture",
+    links: [["https://elixirforum.com/t/looking-for-feedback-on-my-thesis-project-distributed-beam-compute-capability-based-routing-for-nerves/74884", "Read the architecture"], ["https://www.goatmire.com/talk/we-got-communist-nerves-before-gta-6-lol", "Conference talk"]],
     facts: [["Runtime", "Elixir + Nerves"], ["Registry", "Horde CRDT"], ["Network", "Partisan + libp2p"], ["Traversal", "mDNS + DCUTR"]],
     constraint: "Standard OTP semantics had to survive across tiny, intermittently connected devices with radically different hardware."
   },
@@ -21,8 +19,7 @@ const systems = {
     state: "Product I founded — live, paying B2B customers",
     title: "Realtime streams that survive the real world.",
     summary: "One SDK for the four things AI products keep rebuilding: permanent threads, token streams that resume mid-generation, durable agent state that survives a worker crash, and guaranteed pub/sub delivery. Built on Elixir/OTP and Rust NIFs. I founded it and run it — 5 B2B customers, 800+ daily users.",
-    href: "https://pingerchips.com",
-    link: "Visit Pingerchips",
+    links: [["https://pingerchips.com", "Visit Pingerchips"], ["https://docs.pingerchips.com/", "Read the docs"]],
     facts: [["Threads", "Permanent history"], ["Recovery", "Mid-token resume"], ["State", "Durable Objects"], ["Scale", "5 B2B customers"]],
     constraint: "AI teams were rebuilding four systems that never belonged together: SSE, history storage, worker queues, and socket notifications."
   },
@@ -30,8 +27,7 @@ const systems = {
     state: "Product I founded — decision intelligence for UX research",
     title: "Turn a pile of interviews into a decision.",
     summary: "Skyfern records and transcribes user interviews, clusters the themes with HDBSCAN, and lays them out as affinity maps on a Canvas UI. Chrome agents spawn as K8s jobs to join and record calls live. Validated with 150+ interviews over six months; ran on the kitchen cluster for $8K/month less than the cloud equivalent.",
-    href: "https://skyfernai.com",
-    link: "Visit Skyfern AI",
+    links: [["https://skyfernai.com", "Visit Skyfern AI"]],
     facts: [["Discovery", "150+ interviews"], ["Workflow", "Temporal DAGs"], ["Clustering", "HDBSCAN"], ["Savings", "$8K per month"]],
     constraint: "A founder-led product needed sophisticated AI workflows and live meeting automation without venture-scale infrastructure burn."
   },
@@ -39,8 +35,7 @@ const systems = {
     state: "Studio I own and operate — client engagements",
     title: "Keep the product. Harden the foundation.",
     summary: "My rescue-engineering studio. Founders reach v0.1 fast with AI tools, then find it isn't safe to put in front of customers. I take the engagement, keep the working product live, and fix the security, data model, tests, and deployment underneath it.",
-    href: "https://maplifytech.com",
-    link: "Visit Maplify Tech",
+    links: [["https://maplifytech.com", "Visit Maplify Tech"]],
     facts: [["Entry", "Readiness audit"], ["Delivery", "Senior-only"], ["Scope", "Fixed price"], ["Rescue", "4-8 weeks"]],
     constraint: "The working product surface must survive while critical security, data integrity, architecture, and ownership failures are repaired underneath it."
   },
@@ -48,8 +43,7 @@ const systems = {
     state: "Open-source projects I built at 17 — the P2P work behind MoltMesh",
     title: "Compute and models, shared peer to peer.",
     summary: "Mimir Cloud lets peers submit WASM/JS functions that worker nodes on the network schedule and run. MimirLLM does the same for language models: find the models peers are hosting and talk to them, as a light client or a full node. Both libp2p-based and open source. I built them at 17, years before agent meshes were a category, and wrote two articles on the ideas.",
-    href: "https://github.com/sahilpohare/mimir-llm",
-    link: "MimirLLM source",
+    links: [["https://github.com/sahilpohare/mimir-llm", "MimirLLM source"], ["https://github.com/sahilpohare/js-mimir-core", "Mimir Cloud source"], ["https://dev.to/sahil_pohare/building-a-decentralized-ai-chatbot-with-mimirllm-a-step-by-step-tutorial-1ppl", "Article: decentralized chatbot"], ["https://dev.to/sahil_pohare/why-mimirllm-matters-democratizing-access-to-ai-with-decentralization-j7", "Article: why MimirLLM matters"]],
     facts: [["Networking", "libp2p + Kademlia"], ["Compute", "V8 + isolated-VM"], ["Models", "Ollama peers"], ["Built", "Age 17"]],
     constraint: "Sharing compute and models across untrusted peers needed discovery, scheduling, and isolation with no coordinating server — the same problem MoltMesh now solves for agents."
   }
@@ -83,9 +77,18 @@ function selectSystem(key) {
   document.querySelector("#system-summary").textContent = system.summary;
   document.querySelector("#system-constraint").textContent = system.constraint;
 
-  const link = document.querySelector("#system-link");
-  link.href = system.href;
-  link.firstChild.textContent = `${system.link} `;
+  document.querySelector("#system-links").replaceChildren(...system.links.map(([href, label]) => {
+    const a = document.createElement("a");
+    a.className = "text-link";
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.textContent = `${label} `;
+    const arrow = document.createElement("span");
+    arrow.textContent = "↗";
+    a.appendChild(arrow);
+    return a;
+  }));
 
   document.querySelector("#system-facts").replaceChildren(...system.facts.map(([term, value]) => {
     const wrapper = document.createElement("div");
