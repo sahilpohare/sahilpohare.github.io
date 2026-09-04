@@ -1033,11 +1033,9 @@ drawKitchen();
 /* ---------------------------------------------------------------------------
    Ambient liquid
    Blobs manifest at random points in the viewport, swell, hold, then sink
-   back out. Each is a white lobed polygon on a `difference`-blend canvas, so
-   it inverts whatever it covers - the same form as the pointer mass, just
-   arriving at random instead of following the cursor. The rim carries a
-   red/cyan chromatic split: a deliberate, bounded exception to the
-   strict-monochrome rule, confined to the torn edge.
+   back out, inverting whatever they cover. They share one metaball field with
+   the pointer mass, so the two merge rather than overlap. Strictly
+   monochrome: the shader emits white and the difference blend inverts.
    At most a few are alive at once; the loop pauses when the tab is hidden and
    never runs under reduced motion, on touch, or in capture mode.
 --------------------------------------------------------------------------- */
@@ -1047,11 +1045,19 @@ drawKitchen();
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-  const MAX_ALIVE = 3;
+  const MAX_ALIVE = 2;
   const blobs = [];
   let raf = 0;
   let lastSpawn = 0;
-  let nextGap = 900;
+  let nextGap = 1600;
+  let lastPointerAt = performance.now();
+  let lastDraw = 0;
+  const IDLE_MS = 2500;          // stop entirely after this much stillness
+  const MIN_FRAME_MS = 1000 / 30; // ambient motion does not need 60Hz
+  window.addEventListener("pointermove", () => {
+    lastPointerAt = performance.now();
+    if (!raf && !document.hidden) raf = requestAnimationFrame(tick);
+  }, { passive: true });
 
   function size() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -1089,58 +1095,127 @@ drawKitchen();
   // Body: flat white on a difference-blend canvas, so the blob inverts what it
   // covers - identical to the pointer mass (30 segments, same two-term rim
   // warp at the same amplitudes). Only the spawn point differs.
-  // GPU metaball field. A fragment shader evaluates sum(r^2/d^2) per pixel and
-  // thresholds it at 1.0, so the isoline is exact, every ball contributes to
-  // every pixel (no box truncation), and cost is one full-screen pass
-  // regardless of ball count. WebGPU where available, WebGL2 otherwise.
-  const MAX_BALLS = 24;
-  const ballData = new Float32Array(MAX_BALLS * 4);   // x, y, r, _
+  // GPU metaball pipeline, three cheap passes:
+  //   1. field   - render sum(r^2/d^2) into a LOW-RES texture (quarter scale)
+  //   2. blur    - separable gaussian, two taps, smooths the isoline
+  //   3. boolean - threshold at 1.0 to a hard edge, upscaled to the canvas
+  // Output: a black-hole profile. Core emits white (so the difference blend
+  // inverts the page to a void), wrapped in a thin accretion ring that grades
+  // red on the outside to blue on the inside.
+  // Blurring before thresholding is what lets the field run at low resolution:
+  // the smoothing removes the stair-stepping that low-res sampling introduces,
+  // and the boolean pass then produces a crisp contour. Fragment cost drops by
+  // ~16x versus evaluating the field per screen pixel.
+  const MAX_BALLS = 12;
+  const FIELD_SCALE = 0.125;                   // field texture vs canvas
+  const ballData = new Float32Array(MAX_BALLS * 4);
   let gpu = null;
 
-  const SHADER_WGSL = `
-struct Uniforms {
+  const WGSL = `
+struct U {
   res    : vec2f,
   count  : f32,
   phase  : f32,
   balls  : array<vec4f, ${MAX_BALLS}>,
 };
-@group(0) @binding(0) var<uniform> u : Uniforms;
+@group(0) @binding(0) var<uniform> u : U;
 
 @vertex
-fn vs(@builtin(vertex_index) i : u32) -> @builtin(position) vec4f {
+fn vsQuad(@builtin(vertex_index) i : u32) -> @builtin(position) vec4f {
   var p = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
   return vec4f(p[i], 0.0, 1.0);
 }
 
-fn field(pos : vec2f) -> f32 {
+// ---- pass 1: the field, at low resolution -------------------------------
+@fragment
+fn fsField(@builtin(position) fc : vec4f) -> @location(0) vec4f {
+  // fc is in field-texture space; scale up to canvas space to compare with
+  // ball positions, which arrive in canvas pixels.
+  let p = fc.xy / ${FIELD_SCALE};
   var s = 0.0;
   let n = i32(u.count);
   for (var i = 0; i < n; i = i + 1) {
     let b = u.balls[i];
-    let d = pos - b.xy;
+    let d = p - b.xy;
     s = s + (b.z * b.z) / max(dot(d, d), 1.0);
   }
-  return s;
+  // Store the raw field, scaled into 0..1 with headroom above the isoline.
+  return vec4f(s * 0.25, 0.0, 0.0, 1.0);
+}
+
+// ---- pass 2 + 3: blur, then boolean ------------------------------------
+@group(0) @binding(1) var samp : sampler;
+@group(0) @binding(2) var fieldTex : texture_2d<f32>;
+
+fn blurred(uv : vec2f, texel : vec2f) -> f32 {
+  // Separable 3x3 gaussian collapsed into 4 bilinear taps at the diagonals,
+  // which the sampler interpolates for free.
+  let o = texel * 0.75;
+  var s = textureSample(fieldTex, samp, uv + vec2f(-o.x, -o.y)).r;
+  s = s + textureSample(fieldTex, samp, uv + vec2f( o.x, -o.y)).r;
+  s = s + textureSample(fieldTex, samp, uv + vec2f(-o.x,  o.y)).r;
+  s = s + textureSample(fieldTex, samp, uv + vec2f( o.x,  o.y)).r;
+  return s * 0.25;
 }
 
 @fragment
-fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
-  let p = fc.xy;
-  // Boolean isoline, plus a chromatic split: each channel samples the field
-  // at a slightly different offset, so colour appears only at the edge where
-  // the three disagree. Interior pixels are inside for all three -> white.
-  let o = vec2f(cos(u.phase), sin(u.phase)) * 2.4;
-  let r = select(0.0, 1.0, field(p + o) >= 1.0);
-  let g = select(0.0, 1.0, field(p) >= 1.0);
-  let b = select(0.0, 1.0, field(p - o) >= 1.0);
-  let a = max(r, max(g, b));
-  return vec4f(r * a, g * a, b * a, a);
+fn fsBool(@builtin(position) fc : vec4f) -> @location(0) vec4f {
+  let uv = fc.xy / u.res;
+  let texel = vec2f(1.0) / (u.res * ${FIELD_SCALE});
+  let v = blurred(uv, texel);
+  if (v < 0.25) { discard; }
+
+  // Lens dispersion. A real lens splits light because it refracts, and the
+  // bending is strongest where the surface curves hardest - at the rim. So
+  // the channel separation is driven by the FIELD GRADIENT, not by drawing
+  // coloured outlines: each channel thresholds the field displaced a little
+  // along the surface normal, by a different amount.
+  //
+  // Interior: the field is flat, the gradient is ~0, all three channels agree,
+  // and the pixel is white. Rim: the gradient is steep, the three thresholds
+  // land at different radii, and the edge fringes. The falloff is automatic.
+  // BLACK HOLE.
+  // The field's depth below the isoline reads as distance from the singularity,
+  // which gives three concentric zones for free:
+  //
+  //   core   - deep inside: the event horizon. Emits nothing, and because the
+  //            layer is difference-blended, "nothing" means the page inverts
+  //            to a true void.
+  //   ring   - a thin shell just inside the surface: the accretion disk, where
+  //            gravitational lensing splits light. Blue on the inner edge
+  //            (falling in, blueshifted), red on the outer (escaping,
+  //            redshifted). Physics gives the colour order.
+  //   beyond - outside the isoline: untouched page.
+  let depth = (v - 0.25) / 0.25;              // 0 at the horizon, grows inward
+
+  // Ring geometry: a narrow band hugging the surface.
+  let RING = 0.30;                            // shell thickness in depth units
+  if (depth > RING) {
+    // Inside the horizon. Full white on a difference layer = full inversion,
+    // which on this page's black ground reads as an absolute void.
+    return vec4f(1.0, 1.0, 1.0, 1.0);
+  }
+
+  // Position across the ring: 0 at the outer rim, 1 where it meets the core.
+  let t = clamp(depth / RING, 0.0, 1.0);
+
+  // Redshift outward, blueshift inward. Each channel occupies a different
+  // slice of the shell, so the disk grades rather than banding.
+  // Shift each channel across the shell, then lift the whole thing toward
+  // white so the disk is a shimmer at the horizon rather than a saturated
+  // stripe. TINT controls how much colour survives.
+  let TINT = 0.85;
+  let rr = smoothstep(0.00, 0.62, t);
+  let gg = smoothstep(0.19, 0.81, t);
+  let bb = smoothstep(0.38, 1.00, t);
+  let lum = max(rr, max(gg, bb));
+  let cr = mix(lum, rr, TINT);
+  let cg = mix(lum, gg, TINT);
+  let cb = mix(lum, bb, TINT);
+  if (lum < 0.02) { discard; }
+  return vec4f(cr * lum, cg * lum, cb * lum, lum);
 }
 `;
-
-
-
-
 
   async function initWebGPU() {
     try {
@@ -1152,17 +1227,34 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
       if (!gctx) return null;
       const format = navigator.gpu.getPreferredCanvasFormat();
       gctx.configure({ device, format, alphaMode: "premultiplied" });
-      const mod = device.createShaderModule({ code: SHADER_WGSL });
+
+      const mod = device.createShaderModule({ code: WGSL });
       if (mod.getCompilationInfo) {
         const info = await mod.getCompilationInfo();
         if (info.messages.some((m) => m.type === "error")) return null;
       }
-      const pipeline = device.createRenderPipeline({
+
+      const uboSize = 16 + MAX_BALLS * 16;
+      const ubo = device.createBuffer({ size: uboSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+      const staging = new Float32Array(uboSize / 4);
+      const sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
+
+      // Field target: r16float is enough for a scalar and halves bandwidth.
+      const fieldFormat = "r16float";
+      let fieldTex = null, fieldView = null, fw = 0, fh = 0;
+
+      const fieldPipeline = device.createRenderPipeline({
         layout: "auto",
-        vertex: { module: mod, entryPoint: "vs" },
+        vertex: { module: mod, entryPoint: "vsQuad" },
+        fragment: { module: mod, entryPoint: "fsField", targets: [{ format: fieldFormat }] },
+        primitive: { topology: "triangle-list" }
+      });
+      const boolPipeline = device.createRenderPipeline({
+        layout: "auto",
+        vertex: { module: mod, entryPoint: "vsQuad" },
         fragment: {
           module: mod,
-          entryPoint: "fs",
+          entryPoint: "fsBool",
           targets: [{
             format,
             blend: {
@@ -1173,33 +1265,57 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
         },
         primitive: { topology: "triangle-list" }
       });
-      const uboSize = 16 + MAX_BALLS * 16;
-      const ubo = device.createBuffer({ size: uboSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-      const bind = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
+      const fieldBind = device.createBindGroup({
+        layout: fieldPipeline.getBindGroupLayout(0),
         entries: [{ binding: 0, resource: { buffer: ubo } }]
       });
-      const staging = new Float32Array(uboSize / 4);
+      let boolBind = null;
+
+      function ensureField(w, h) {
+        const tw = Math.max(1, Math.round(w * FIELD_SCALE));
+        const th = Math.max(1, Math.round(h * FIELD_SCALE));
+        if (fieldTex && tw === fw && th === fh) return;
+        fieldTex?.destroy?.();
+        fw = tw; fh = th;
+        fieldTex = device.createTexture({
+          size: [fw, fh],
+          format: fieldFormat,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
+        });
+        fieldView = fieldTex.createView();
+        boolBind = device.createBindGroup({
+          layout: boolPipeline.getBindGroupLayout(0),
+          entries: [
+            { binding: 0, resource: { buffer: ubo } },
+            { binding: 1, resource: sampler },
+            { binding: 2, resource: fieldView }
+          ]
+        });
+      }
+
       return {
         kind: "webgpu",
         draw(count, phase) {
-          staging[0] = canvas.width; staging[1] = canvas.height;
-          staging[2] = count; staging[3] = phase;
+          window.__gpuDraws = (window.__gpuDraws || 0) + 1;
+          const w = canvas.width, h = canvas.height;
+          ensureField(w, h);
+          staging[0] = w; staging[1] = h; staging[2] = count; staging[3] = phase;
           staging.set(ballData.subarray(0, count * 4), 4);
           device.queue.writeBuffer(ubo, 0, staging);
+
           const enc = device.createCommandEncoder();
-          const pass = enc.beginRenderPass({
-            colorAttachments: [{
-              view: gctx.getCurrentTexture().createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 0 },
-              loadOp: "clear",
-              storeOp: "store"
-            }]
+          // 1. field, low res
+          const fp = enc.beginRenderPass({
+            colorAttachments: [{ view: fieldView, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: "clear", storeOp: "store" }]
           });
-          pass.setPipeline(pipeline);
-          pass.setBindGroup(0, bind);
-          pass.draw(3);
-          pass.end();
+          if (count) { fp.setPipeline(fieldPipeline); fp.setBindGroup(0, fieldBind); fp.draw(3); }
+          fp.end();
+          // 2 + 3. blur + boolean, to the canvas
+          const bp = enc.beginRenderPass({
+            colorAttachments: [{ view: gctx.getCurrentTexture().createView(), clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: "clear", storeOp: "store" }]
+          });
+          if (count) { bp.setPipeline(boolPipeline); bp.setBindGroup(0, boolBind); bp.draw(3); }
+          bp.end();
           device.queue.submit([enc.finish()]);
         }
       };
@@ -1212,9 +1328,6 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
 
   function renderField(balls, phase) {
     if (!gpu) return;
-    // The shader reads gl_FragCoord / @builtin(position), which are DEVICE
-    // pixels, while ball positions arrive in CSS pixels. Scale both the
-    // centres and the radii, or the mass renders offset from the cursor.
     const count = Math.min(balls.length, MAX_BALLS);
     for (let i = 0; i < count; i += 1) {
       ballData[i * 4] = balls[i].x * dpr;
@@ -1227,12 +1340,37 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
 
   function tick(now) {
     if (document.hidden) { raf = 0; return; }
+
+    // Is there anything to animate? Live blobs, or a pointer mass on screen.
+    const massLive = !!(window.__dragField && window.__dragField.probe && window.__dragField.probe());
+    const idle = now - lastPointerAt > IDLE_MS;
+    if (!blobs.length && !massLive && idle) {
+      // Nothing on screen and nobody here: clear once and stop. A pointermove
+      // restarts the loop. An unattended tab then costs zero GPU.
+      if (gpu) gpu.draw(0, 0);
+      raf = 0;
+      return;
+    }
+
+    // The cursor mass must track the pointer every frame or the drag stutters,
+    // so there is no blanket frame cap. The saving comes from ambient blobs:
+    // when the pointer is absent they are the only thing drawing, and they
+    // move slowly enough to run at half rate.
+    if (!massLive && now - lastDraw < MIN_FRAME_MS) {
+      raf = requestAnimationFrame(tick);
+      return;
+    }
+    lastDraw = now;
     const dragLive = !!(window.__dragField && window.__dragField.probe && window.__dragField.probe());
+    // Only spawn while the visitor is actually present. After IDLE_MS with no
+    // pointer movement the field drains and the loop stops, so an unattended
+    // tab costs nothing - this effect is ambient, not worth a warm laptop.
+    const active = now - lastPointerAt < IDLE_MS;
     if (!lastSpawn) lastSpawn = now;
-    if (now - lastSpawn > nextGap && blobs.length < MAX_ALIVE) {
+    if (active && now - lastSpawn > nextGap && blobs.length < MAX_ALIVE) {
       spawn(now);
       lastSpawn = now;
-      nextGap = 700 + Math.random() * 2400;
+      nextGap = 1400 + Math.random() * 3200;
     }
 
     // The pointer mass, if it is currently alive. Ambient blobs feel it.
@@ -1278,6 +1416,13 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
       window.__dragField.ballsInto(balls);
     }
 
+    // Nothing alive: stop the loop instead of clearing an empty screen every
+    // frame. A spawn or a pointer move restarts it.
+    if (!balls.length) {
+      if (gpu) gpu.draw(0, 0);
+      raf = 0;
+      return;
+    }
     renderField(balls, now * .0006);
     raf = requestAnimationFrame(tick);
   }
@@ -1319,14 +1464,14 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
   // keep the backing store modest so that stays cheap.
   const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-  const NODES = 7;
+  const NODES = 6;
   const chain = [];            // {x,y} trail samples, head = pointer
   // The mercury mass is speed-driven: a small bead when the cursor is slow or
   // still, swelling toward R_MAX as it moves faster. A volume drag raises the
   // floor so it stays substantial while you rotate.
-  const R_MIN = 30;
-  const R_DRAG_FLOOR = 150;
-  const R_MAX = 250;
+  const R_MIN = 16;
+  const R_DRAG_FLOOR = 74;
+  const R_MAX = 120;
   const SPEED_TO_R = 6.5;      // px of radius per px/frame of pointer speed
   let speedEMA = 0;            // smoothed pointer speed
   const IDLE_HIDE = 900;       // ms of pointer stillness before it dissipates
@@ -1524,9 +1669,12 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
     wob += 0.05;
 
     if (radius > 1) {
-      // Rendering now happens on the shared liquid layer; just keep it ticking.
+      // Keep our own cheap tick alive so decay always completes, and wake the
+      // shared layer to draw. Without this the shared loop can exit while the
+      // mass is mid-decay and freeze it, which pins the layer awake forever.
       if (window.__liquidLayer) window.__liquidLayer.request();
       raf = requestAnimationFrame(tick);
+      return;
     } else {
       stop();
     }
@@ -1567,6 +1715,36 @@ fn fs(@builtin(position) fc : vec4f) -> @location(0) vec4f {
   window.__dragField = {
     point, grab, release,
     probe: () => (chain[0] && radius > 1 ? { x: chain[0].x, y: chain[0].y, r: radius } : null),
+    // Advance the mass's simulation. This used to run in this module's own
+    // rAF loop, which was retired when rendering moved to the shared layer;
+    // without it radius never decays, probe() never returns null, and the
+    // shared loop can never go idle. That was a permanent 60fps GPU draw.
+    step: () => {
+      const maxGap = Math.min(radius * 0.6, (840 * 0.9) / Math.max(1, chain.length));
+      for (let i = 1; i < chain.length; i += 1) {
+        const lead = chain[i - 1];
+        const node = chain[i];
+        node.x += (lead.x - node.x) * 0.42;
+        node.y += (lead.y - node.y) * 0.42;
+        const dx = node.x - lead.x;
+        const dy = node.y - lead.y;
+        const d = Math.hypot(dx, dy);
+        if (d > maxGap && d > 0) {
+          const pull = (d - maxGap) / d;
+          node.x -= dx * pull;
+          node.y -= dy * pull;
+        }
+      }
+      speedEMA *= 0.86;
+      if (held === 0) {
+        const still = performance.now() - lastMoveAt;
+        if (still > IDLE_HIDE) radiusTarget = 0;
+        else radiusTarget = Math.max(R_MIN, Math.min(R_MIN + speedEMA * SPEED_TO_R, R_MAX));
+      }
+      radius += (radiusTarget - radius) * 0.16;
+      wob += 0.05;
+      if (radius <= 1) { radius = 0; }
+    },
     // Contribute the mass's lobes to the shared metaball field, so it merges
     // with ambient blobs through the field rather than overlapping them.
     ballsInto: (out) => {
